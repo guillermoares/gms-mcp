@@ -93,6 +93,9 @@ class RunnerExecutionMixin:
             if platform_target == "macOS":
                 target_app_zip = ide_temp_dir / f"{project_name}.app.zip"
                 extra_args.append(f"--tf={target_app_zip}")
+            elif platform_target == "Windows":
+                # Windows PackageZip needs an explicit target zip (see compile_project in igor.py).
+                extra_args.append(f"--tf={ide_temp_dir / (project_name + '.zip')}")
 
             cmd = self._build_platform_action_command(
                 "PackageZip",

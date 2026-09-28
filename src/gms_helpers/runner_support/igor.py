@@ -32,6 +32,12 @@ class RunnerIgorMixin:
         return compile_finished and ("Igor complete." in output or "Stats : GMA" in output)
 
     @staticmethod
+    def _is_zip_step_failure(output_lines: List[str]) -> bool:
+        """True when Igor's PackageZip died in the final zip/move step (after the game compiled)."""
+        output = "\n".join(output_lines)
+        return "WindowsBuilder.PackageZip" in output and "System.IO.File.Move" in output
+
+    @staticmethod
     def _igor_rejected_command(output_lines: List[str]) -> bool:
         return any("igor: unknown command" in line.lower() for line in output_lines)
 
@@ -425,6 +431,11 @@ class RunnerIgorMixin:
 
             compile_action = "Package" if platform_target in {"Android", "Linux"} else "PackageZip"
             output_args = [f"/of={ide_temp_dir / project_name}"]
+            if compile_action == "PackageZip":
+                # Recent Windows runtimes (verified with 2026.0.0.23) throw
+                # "The value cannot be an empty string (Parameter 'destFileName')" from
+                # File.Move at the end of PackageZip unless the target zip is given explicitly.
+                output_args.append(f"--tf={ide_temp_dir / (project_name + '.zip')}")
             cmd = self._build_platform_action_command(
                 compile_action,
                 platform_target,
@@ -440,6 +451,16 @@ class RunnerIgorMixin:
 
             if process.returncode == 0 and not self._igor_rejected_command(output_lines):
                 print(f"[OK] {stage_label.capitalize()} completed successfully!")
+                return True
+
+            # The compile itself is what this action validates. If Igor finished compiling and only
+            # its final zip/move step failed, report a successful compile with a loud warning instead
+            # of a failure (gm_run's IDE-temp path already tolerates the same failure).
+            if self._compile_stage_succeeded(output_lines) and self._is_zip_step_failure(output_lines):
+                print(
+                    "[WARN] Compile succeeded, but Igor's PackageZip step failed while creating the zip "
+                    f"(exit code {process.returncode}). The project compiles; no package was produced."
+                )
                 return True
 
             failure_message = self._build_stage_failure_message(stage_label, process.returncode, output_lines)

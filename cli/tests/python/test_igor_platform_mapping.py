@@ -131,6 +131,48 @@ class TestRunnerCommandSelection(unittest.TestCase):
         self.assertTrue(ok)
         self.assertIn("PackageZip", captured_cmd)
         self.assertNotIn("Tests", captured_cmd)
+        # Windows PackageZip fails at File.Move without an explicit target zip.
+        self.assertTrue(any(str(arg).startswith("--tf=") and str(arg).endswith(".zip") for arg in captured_cmd))
+
+    def _zip_failure_process(self, output_lines):
+        proc = self._fake_process()
+        proc.stdout = iter(output_lines)
+        proc.returncode = 1
+        return proc
+
+    _COMPILE_OK_LINES = [
+        "Final Compile...Final Compile finished.",
+        "Saving IFF file... C:\tmp\proj.win",
+        "Igor complete.",
+    ]
+    _ZIP_FAIL_LINES = [
+        "System.ArgumentException: The value cannot be an empty string. (Parameter 'destFileName')",
+        "at System.IO.File.Move(String sourceFileName, String destFileName, Boolean overwrite)",
+        "at Igor.WindowsBuilder.PackageZip()",
+        "Igor complete.",
+    ]
+
+    def _compile_windows_with_output(self, output_lines):
+        runner = GameMakerRunner(self.project_root)
+        with patch.object(runner, "find_gamemaker_runtime", side_effect=lambda: self._fake_find_runtime(runner)):
+            with patch.object(runner, "find_license_file", return_value=Path("/fake/licence.plist")):
+                with patch.object(runner, "get_prefabs_path", return_value=None):
+                    with patch.object(
+                        runner, "_run_igor_command", return_value=self._zip_failure_process(output_lines)
+                    ):
+                        return runner.compile_project(platform_target="Windows", runtime_type="VM")
+
+    def test_compile_project_windows_tolerates_zip_step_failure_after_finished_compile(self):
+        ok = self._compile_windows_with_output(self._COMPILE_OK_LINES + self._ZIP_FAIL_LINES)
+        self.assertTrue(ok)
+
+    def test_compile_project_windows_still_fails_when_compile_did_not_finish(self):
+        ok = self._compile_windows_with_output(self._ZIP_FAIL_LINES)
+        self.assertFalse(ok)
+
+    def test_compile_project_windows_still_fails_on_other_packaging_errors(self):
+        ok = self._compile_windows_with_output(self._COMPILE_OK_LINES + ["ERROR: something else broke"])
+        self.assertFalse(ok)
 
     def test_compile_project_uses_package_on_linux(self):
         runner = GameMakerRunner(self.project_root)

@@ -214,30 +214,46 @@ def remove_layer(room_name: str, layer_name: str) -> bool:
 
 
 def list_layers(room_name: str) -> List[Dict[str, Any]]:
-    """List all layers in a room."""
+    """List all layers in a room, including nested sublayers.
+
+    Sublayers are returned right after their parent (depth-first) with ``parent`` set to the
+    parent layer's name (``None`` for top-level layers).
+    """
     room_path = _find_room_file(room_name)
     room_data = _load_room_data(room_path)
 
-    results = []
+    results: List[Dict[str, Any]] = []
     print(f"[ROOM] Layers in room '{room_name}':")
     print(f"{'Name':<20} {'Type':<15} {'Depth':<10} {'Visible'}")
     print("-" * 55)
 
-    for layer in room_data.get("layers", []):
-        name = layer.get("name")
-        res_type = layer.get("resourceType", "Unknown")
-        # Map back to simple type
-        layer_type = "Unknown"
-        for k, v in LAYER_TYPES.items():
-            if v == res_type:
-                layer_type = k.capitalize()
-                break
+    def _walk(layers: List[Dict[str, Any]], parent: Optional[str], indent: int) -> None:
+        for layer in layers:
+            name = layer.get("name")
+            res_type = layer.get("resourceType", "Unknown")
+            # Map back to simple type
+            layer_type = "Unknown"
+            for k, v in LAYER_TYPES.items():
+                if v == res_type:
+                    layer_type = k.capitalize()
+                    break
 
-        depth = layer.get("depth", 0)
-        visible = "Yes" if layer.get("visible", True) else "No"
+            depth = layer.get("depth", 0)
+            visible = "Yes" if layer.get("visible", True) else "No"
 
-        print(f"{name:<20} {layer_type:<15} {depth:<10} {visible}")
-        results.append({"name": name, "type": layer_type, "depth": depth, "visible": layer.get("visible", True)})
+            print(f"{'  ' * indent + str(name):<20} {layer_type:<15} {depth:<10} {visible}")
+            results.append(
+                {
+                    "name": name,
+                    "type": layer_type,
+                    "depth": depth,
+                    "visible": layer.get("visible", True),
+                    "parent": parent,
+                }
+            )
+            _walk(layer.get("layers", []) or [], name, indent + 1)
+
+    _walk(room_data.get("layers", []), None, 0)
 
     return results
 

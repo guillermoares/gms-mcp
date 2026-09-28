@@ -210,6 +210,27 @@ class TestRoomLayerHelper(unittest.TestCase):
         self.assertIsInstance(result, list)
         self.assertGreater(len(result), 0)
 
+    def test_list_layers_includes_nested_sublayers(self):
+        """Nested sublayers are listed after their parent, with a parent reference."""
+        from gms_helpers.room_layer_helper import _find_room_file, _load_room_data
+
+        add_layer("r_test", "lyr_parent", "instance", 300)
+        room_path = _find_room_file("r_test")
+        room_data = _load_room_data(room_path)
+        parent = next(l for l in room_data["layers"] if l["name"] == "lyr_parent")
+        parent["layers"] = [{"name": "lyr_child", "resourceType": "GMRAssetLayer", "depth": 10, "visible": True, "layers": []}]
+        import json
+
+        with open(room_path, "w", encoding="utf-8") as f:
+            json.dump(room_data, f)
+
+        result = list_layers("r_test")
+        names = [l["name"] for l in result]
+        self.assertEqual(names.index("lyr_child"), names.index("lyr_parent") + 1)
+        child = result[names.index("lyr_child")]
+        self.assertEqual(child["parent"], "lyr_parent")
+        self.assertIsNone(result[names.index("lyr_parent")]["parent"])
+
     def test_layer_types_constants(self):
         """Test that LAYER_TYPES constant contains expected values."""
         expected_types = {"background", "instance", "asset", "tile", "path", "effect"}
