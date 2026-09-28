@@ -228,6 +228,41 @@ class TestRunnerCommandSelection(unittest.TestCase):
         self.assertNotIn("PackageZip", captured_cmd)
         self.assertFalse(any(str(arg).startswith("--tf=") for arg in captured_cmd))
 
+    def _windows_run_with_igor_output(self, output_lines, returncode=1):
+        runner = GameMakerRunner(self.project_root)
+        process = self._fake_process()
+        process.returncode = returncode
+        stale_exe = Path("/fake/stale/Boner Clicker.exe")
+        with patch.object(runner, "find_gamemaker_runtime", side_effect=lambda: self._fake_find_runtime(runner)):
+            with patch.object(runner, "find_license_file", return_value=Path("/fake/licence.plist")):
+                with patch.object(runner, "get_prefabs_path", return_value=None):
+                    with patch.object(runner, "_run_igor_command", return_value=process):
+                        with patch.object(runner, "_stream_igor_output", return_value=output_lines):
+                            with patch.object(runner, "_find_launch_target", return_value=stale_exe):
+                                with patch.object(runner, "_start_game_process") as start_game:
+                                    result = runner.run_project_direct(
+                                        platform_target="Windows",
+                                        runtime_type="VM",
+                                        background=True,
+                                        output_location="temp",
+                                    )
+        return result, start_game
+
+    def test_windows_run_refuses_stale_build_when_compile_did_not_finish(self):
+        result, start_game = self._windows_run_with_igor_output(
+            ["[ERROR] Cannot load project or resource because loading failed with the following errors:"]
+        )
+
+        self.assertFalse(result)
+        start_game.assert_not_called()
+
+    def test_windows_run_launches_when_only_zip_step_failed_after_finished_compile(self):
+        result, start_game = self._windows_run_with_igor_output(
+            self._COMPILE_OK_LINES + self._ZIP_FAIL_LINES
+        )
+
+        start_game.assert_called_once()
+
     def test_package_export_failure_message_mentions_signing_stage(self):
         runner = GameMakerRunner(self.project_root)
         message = runner._build_stage_failure_message(

@@ -122,8 +122,18 @@ class RunnerExecutionMixin:
                     process.returncode,
                     output_lines,
                 )
-                print(f"[WARN] {failure_message} Checking whether runnable output was still created...")
-                # Don't return False immediately - check if files were created successfully
+                if not self._compile_stage_succeeded(output_lines):
+                    # The game did not finish compiling (e.g. the project failed to load), so any
+                    # artifact left in the temp dir is from an EARLIER build. Launching it would
+                    # silently run stale code, so fail instead.
+                    self._remember_failure(
+                        f"{failure_message} Compile did not finish; refusing to launch a stale build.",
+                        retryable=self._is_retryable_igor_failure(process.returncode, output_lines),
+                    )
+                    print(f"[ERROR] {failure_message} Compile did not finish; refusing to launch a stale build.")
+                    return False
+                print(f"[WARN] {failure_message} Compile finished; checking whether runnable output was still created...")
+                # Only the final zip step failed - the game itself was built, so check for the artifact
 
             if platform_target == "macOS" and target_app_zip and target_app_zip.exists():
                 # Igor emits a zipped .app. Extract it so we can launch the bundle directly.
