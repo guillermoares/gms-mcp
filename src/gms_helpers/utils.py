@@ -123,6 +123,98 @@ def save_json(data, file_path):
     atomic_write_text(path, _render_json_for_existing_path(path, data, default_trailing_commas=True))
 
 
+_MAP_STYLE_DICT_KEYS = {"glyphs", "Channels"}
+"""Dict-typed fields GameMaker's engine treats as maps (ds_map-like: keyed by a
+data value - a char code, a channel index) rather than structs (fixed-schema
+records). Maps always explode into one entry per line with compact values,
+exactly like an array would, regardless of the ambient pretty/compact mode -
+this can't be derived from JSON shape alone since a map and a struct are both
+just JSON objects; it's a property of which GameMaker class is being
+serialized. Confirmed against fonts (`glyphs`) and sequence/animcurve keyframe
+stores (`Channels`), 2026-09-28 - other engine map fields may need adding here
+if a future file type round-trips imperfectly."""
+
+
+def _render_gm_value(key: str | None, value: Any, depth: int, pretty: bool) -> str:
+    """Render one dict value, applying the map-style override for known keys."""
+    if key in _MAP_STYLE_DICT_KEYS and isinstance(value, dict) and value:
+        indent_unit = "  "
+        inner = indent_unit * (depth + 1)
+        closing = indent_unit * depth
+        body = "\n".join(
+            f'{inner}{json.dumps(k, ensure_ascii=False)}:{_render_gm_container(v, depth + 1, False)},'
+            for k, v in value.items()
+        )
+        return "{\n" + body + "\n" + closing + "}"
+    return _render_gm_container(value, depth, pretty)
+
+
+def _render_gm_container(value: Any, depth: int, pretty: bool) -> str:
+    """Render a JSON container the way GameMaker's own IDE serializes .yy/.yyp files.
+
+    Reverse-engineered from real project files (confirmed against boner-clicker's
+    .yyp, object, room, font, and sequence files, 2026-09-28). Rules, applied
+    recursively:
+
+    1. A non-empty array ALWAYS explodes into one element per line, regardless of
+       where it appears in the tree.
+    2. A dict's own keys explode into one-per-line only while `pretty` is True.
+       `pretty` starts True at the document root and survives descending through
+       dict values reached by key (e.g. top-level "parent", "physicsSettings").
+       The moment a dict is reached as an array ELEMENT it becomes non-pretty
+       (inline, comma-joined keys) for itself and for every dict nested inside it
+       via further keys - but arrays inside it still explode per rule 1, and
+       *their* element dicts reset to non-pretty independently (which is already
+       true since array elements are always non-pretty).
+    3. A dict field named in `_MAP_STYLE_DICT_KEYS` always explodes one-entry-
+       per-line with compact values, regardless of `pretty` - see that constant.
+    4. Every non-empty container, pretty or not, keeps GameMaker's trailing comma
+       after its last entry, right before the closing bracket/brace.
+    """
+    indent_unit = "  "
+    if isinstance(value, dict):
+        if not value:
+            return "{}"
+        if pretty:
+            inner = indent_unit * (depth + 1)
+            closing = indent_unit * depth
+            body = "\n".join(
+                f'{inner}{json.dumps(k, ensure_ascii=False)}:{_render_gm_value(k, v, depth + 1, True)},'
+                for k, v in value.items()
+            )
+            return "{\n" + body + "\n" + closing + "}"
+        body = ",".join(
+            f'{json.dumps(k, ensure_ascii=False)}:{_render_gm_value(k, v, depth + 1, False)}'
+            for k, v in value.items()
+        )
+        return "{" + body + ",}"
+    if isinstance(value, list):
+        if not value:
+            return "[]"
+        if all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in value):
+            # Pure-numeric arrays (colour channels, extension arg-type lists, tile
+            # data) stay inline rather than exploding one element per line - unlike
+            # string- or dict-element arrays. Very long numeric arrays (bulk tile
+            # data) are actually column-wrapped by GameMaker rather than kept on one
+            # line; that finer wrap isn't reproduced here since nothing in the MCP
+            # tool surface edits raw tile data directly.
+            return "[" + ",".join(_render_gm_container(item, depth + 1, False) for item in value) + ",]"
+        inner = indent_unit * (depth + 1)
+        closing = indent_unit * depth
+        body = "\n".join(f"{inner}{_render_gm_container(item, depth + 1, False)}," for item in value)
+        return "[\n" + body + "\n" + closing + "]"
+    rendered = json.dumps(value, ensure_ascii=False)
+    if isinstance(value, float) and "e" in rendered:
+        # GameMaker writes scientific notation with an uppercase exponent marker.
+        rendered = rendered.replace("e", "E")
+    return rendered
+
+
+def render_gm_style_json(data: Dict[str, Any]) -> str:
+    """Serialize `data` exactly the way GameMaker's IDE writes .yy/.yyp files."""
+    return _render_gm_container(data, 0, True)
+
+
 def _render_json_for_existing_path(
     path: Path,
     data: Dict[str, Any],
@@ -136,32 +228,20 @@ def _render_json_for_existing_path(
     except FileNotFoundError:
         pass
 
-    indent: int | str = 2
     trailing_commas = default_trailing_commas
     final_newline = False
     line_ending = "\n"
     if original:
-        for line in original.splitlines():
-            indentation = line[: len(line) - len(line.lstrip(" \t"))]
-            if indentation and line[len(indentation) :].strip():
-                indent = indentation
-                break
         trailing_commas = _has_trailing_commas(original)
         line_ending = "\r\n" if "\r\n" in original else "\n"
         final_newline = original.endswith(("\r\n", "\n"))
 
-        compact_body = original[: -len(line_ending)] if final_newline else original
-        if "\r" not in compact_body and "\n" not in compact_body:
-            rendered = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
-            if trailing_commas:
-                rendered = add_trailing_commas(rendered)
-            return rendered + (line_ending if final_newline else "")
-
-    rendered = json.dumps(data, indent=indent, ensure_ascii=False)
+    if trailing_commas:
+        rendered = render_gm_style_json(data)
+    else:
+        rendered = json.dumps(data, indent=2, ensure_ascii=False)
     if line_ending != "\n":
         rendered = rendered.replace("\n", line_ending)
-    if trailing_commas:
-        rendered = add_trailing_commas(rendered)
     if final_newline:
         rendered += line_ending
     return rendered
