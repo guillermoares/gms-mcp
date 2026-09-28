@@ -97,6 +97,70 @@ class TestBridgeInstallerStatus(unittest.TestCase):
         self.assertFalse(status["registered_in_yyp"])
 
 
+class TestBridgeInstallerEmbeddedFolders(unittest.TestCase):
+    """Current project format: folders live only in the .yyp ``Folders`` array (no folders/ dir).
+
+    Writing folders/__mcp.yy or a folder entry in ``resources`` makes GameMaker fail to load the
+    project, so the installer must only append to ``Folders`` here.
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.project_root = Path(self.temp_dir)
+        (self.project_root / "objects").mkdir()
+        (self.project_root / "scripts").mkdir()
+        self.yyp_path = self.project_root / "test.yyp"
+        self.yyp_path.write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "resources": [],
+                    "Folders": [
+                        {
+                            "$GMFolder": "",
+                            "%Name": "Objects",
+                            "folderPath": "folders/Objects.yy",
+                            "name": "Objects",
+                            "resourceType": "GMFolder",
+                            "resourceVersion": "2.0",
+                        }
+                    ],
+                }
+            )
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_install_does_not_write_folder_file_or_folder_resource(self):
+        result = BridgeInstaller(self.project_root).install()
+
+        self.assertTrue(result["ok"])
+        self.assertFalse((self.project_root / "folders").exists())
+
+        yyp_data = load_json(self.yyp_path)
+        resource_paths = [r.get("id", {}).get("path", "") for r in yyp_data["resources"]]
+        self.assertFalse(any(p.startswith("folders/") for p in resource_paths))
+        self.assertTrue(any(BRIDGE_OBJECT_NAME in p for p in resource_paths))
+        self.assertTrue(any(BRIDGE_SCRIPT_NAME in p for p in resource_paths))
+        # The folder is still registered where GameMaker expects it.
+        self.assertTrue(any("__mcp" in f.get("folderPath", "") for f in yyp_data["Folders"]))
+
+    def test_status_reports_folder_from_yyp_and_uninstall_cleans_up(self):
+        installer = BridgeInstaller(self.project_root)
+        installer.install()
+
+        status = installer.get_status()
+        self.assertTrue(status["installed"])
+        self.assertTrue(status["folder_exists"])
+        self.assertEqual(status["issues"], [])
+
+        self.assertTrue(installer.uninstall()["ok"])
+        yyp_data = load_json(self.yyp_path)
+        self.assertFalse(any("__mcp" in f.get("folderPath", "") for f in yyp_data["Folders"]))
+        self.assertFalse(any("__mcp" in r.get("id", {}).get("path", "") for r in yyp_data["resources"]))
+
+
 class TestBridgeInstallerInstall(unittest.TestCase):
     """Tests for bridge installation."""
 

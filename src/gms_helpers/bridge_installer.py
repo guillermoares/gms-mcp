@@ -112,6 +112,18 @@ class BridgeInstaller:
         self._script_version = _detect_asset_format(self.project_root, "scripts")
         self._folder_version = _detect_asset_format(self.project_root, "folders")
 
+    def _uses_embedded_folders(self) -> bool:
+        """True when the .yyp keeps folders only in its ``Folders`` array (current project format).
+
+        In that format there is no ``folders/`` directory and folders are NOT entries in ``resources``;
+        writing a ``folders/<name>.yy`` file plus a resource entry makes GameMaker fail to load the
+        project ("Cannot start process because a file name has not been provided").
+        """
+        try:
+            return bool(load_json(self.yyp_path).get("Folders"))
+        except Exception:
+            return False
+
     def is_installed(self) -> bool:
         """Check if bridge is already installed."""
         # Check for bridge object
@@ -165,6 +177,11 @@ class BridgeInstaller:
         # Check .yyp registration
         try:
             yyp_data = load_json(self.yyp_path)
+            if not status["folder_exists"]:
+                # Current project format: the folder only exists as a ``Folders`` entry in the .yyp.
+                status["folder_exists"] = any(
+                    BRIDGE_FOLDER_NAME in f.get("folderPath", "") for f in yyp_data.get("Folders", [])
+                )
             resources = yyp_data.get("resources", [])
             registered_count = 0
             for resource in resources:
@@ -731,12 +748,14 @@ global.__mcp_enabled = false;
             print("[BRIDGE] Backing up .yyp...")
             self._backup_yyp()
 
-            # Step 2: Create folder asset
-            print("[BRIDGE] Creating folder asset...")
-            folder_yy_path, folder_data = self._create_folder_asset()
-            folder_yy_path.parent.mkdir(parents=True, exist_ok=True)
-            save_json(folder_data, folder_yy_path)
-            created_paths.append(folder_yy_path)
+            # Step 2: Create folder asset (legacy projects only; see _uses_embedded_folders)
+            embedded_folders = self._uses_embedded_folders()
+            if not embedded_folders:
+                print("[BRIDGE] Creating folder asset...")
+                folder_yy_path, folder_data = self._create_folder_asset()
+                folder_yy_path.parent.mkdir(parents=True, exist_ok=True)
+                save_json(folder_data, folder_yy_path)
+                created_paths.append(folder_yy_path)
 
             # Step 3: Create script asset
             print("[BRIDGE] Creating script asset...")
@@ -791,15 +810,16 @@ global.__mcp_enabled = false;
             # Add resources
             resources = yyp_data.setdefault("resources", [])
 
-            # Add folder resource
-            resources.append(
-                {
-                    "id": {
-                        "name": BRIDGE_FOLDER_NAME,
-                        "path": f"folders/{BRIDGE_FOLDER_NAME}.yy",
-                    },
-                }
-            )
+            # Add folder resource (legacy projects only; with embedded Folders this entry is invalid)
+            if not embedded_folders:
+                resources.append(
+                    {
+                        "id": {
+                            "name": BRIDGE_FOLDER_NAME,
+                            "path": f"folders/{BRIDGE_FOLDER_NAME}.yy",
+                        },
+                    }
+                )
 
             # Add script resource
             resources.append(
