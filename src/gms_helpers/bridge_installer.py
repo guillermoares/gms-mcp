@@ -698,6 +698,41 @@ function __mcp_execute_command(_command) {
             }
             return "OK:" + string(instance_count);
             
+        case "inst_call":
+            // inst_call <object|global> <dotted.path> [args...]
+            if (array_length(_parts) < 3) return "ERROR:Usage: inst_call <object|global> <dotted.path> [args]";
+            try {
+                var _path = string_split(_parts[2], ".");
+                var _n = array_length(_path), _i = 0, _cur;
+                if (_parts[1] == "global") {
+                    if (_n < 2 || !variable_global_exists(_path[0])) return "ERROR:Need global.<name>.<method>";
+                    _cur = variable_global_get(_path[0]);
+                    _i = 1;
+                } else {
+                    var _o = asset_get_index(_parts[1]);
+                    if (_o < 0 || !instance_exists(_o)) return "ERROR:No instance of " + _parts[1];
+                    _cur = instance_find(_o, 0);
+                }
+                for (var _k = _i; _k < _n - 1; _k++) {
+                    if (!variable_instance_exists(_cur, _path[_k])) return "ERROR:No " + _path[_k];
+                    _cur = variable_instance_get(_cur, _path[_k]);
+                }
+                var _name = _path[_n - 1];
+                if (!variable_instance_exists(_cur, _name)) return "ERROR:No " + _name;
+                var _fn = variable_instance_get(_cur, _name);
+                if (!is_method(_fn)) return "ERROR:Not a method: " + _parts[2];
+                var _args = [];
+                for (var _a = 3; _a < array_length(_parts); _a++) {
+                    var _num = undefined;
+                    try { _num = real(_parts[_a]); } catch (_e) { _num = undefined; }
+                    array_push(_args, is_undefined(_num) ? _parts[_a] : _num);
+                }
+                return "OK:" + string(method_call(_fn, _args));
+            } catch (_ex) {
+                // a throw here would open an error dialog and hang the game
+                return "ERROR:" + string(_ex.message);
+            }
+            
         default:
             return "ERROR:Unknown command: " + _action;
     }
