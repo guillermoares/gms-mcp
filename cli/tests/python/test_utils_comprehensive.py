@@ -242,17 +242,16 @@ class TestJSONUtilities(TestUtilsComprehensive):
         loaded_data = load_json_loose(Path(json_file))
         self.assertEqual(loaded_data, test_data)
 
-    def test_save_json_loose_preserves_existing_compact_style(self):
+    def test_save_json_loose_rewrites_compact_file_without_trailing_commas(self):
         json_file = self.project_root / "compact.yy"
         json_file.write_text('{"name":"room","layers":[]}', encoding="utf-8")
 
         save_json_loose(json_file, {"name": "room", "layers": [], "visible": True})
 
         content = json_file.read_text(encoding="utf-8")
-        self.assertNotIn("\n", content)
-        self.assertEqual(content, '{"name":"room","layers":[],"visible":true}')
+        self.assertEqual(content, '{\n  "name": "room",\n  "layers": [],\n  "visible": true\n}')
 
-    def test_save_json_loose_preserves_compact_trailing_commas_and_strings(self):
+    def test_save_json_loose_renders_gm_style_for_compact_trailing_commas_and_strings(self):
         json_file = self.project_root / "compact_trailing.yy"
         json_file.write_text('{"name":"room","marker":",}","layers":[],}', encoding="utf-8")
         data = {"name": "room", "marker": ",}", "layers": [], "visible": True}
@@ -260,10 +259,13 @@ class TestJSONUtilities(TestUtilsComprehensive):
         save_json_loose(json_file, data)
 
         content = json_file.read_text(encoding="utf-8")
-        self.assertEqual(content, '{"name":"room","marker":",}","layers":[],"visible":true,}')
+        self.assertEqual(
+            content,
+            '{\n  "name":"room",\n  "marker":",}",\n  "layers":[],\n  "visible":true,\n}',
+        )
         self.assertEqual(json.loads(strip_trailing_commas(content)), data)
 
-    def test_save_json_loose_preserves_compact_file_with_final_newline(self):
+    def test_save_json_loose_renders_gm_style_and_keeps_final_newline(self):
         data = {"name": "room", "layers": [], "visible": True}
 
         for label, line_ending in (("lf", b"\n"), ("crlf", b"\r\n")):
@@ -275,10 +277,11 @@ class TestJSONUtilities(TestUtilsComprehensive):
 
                 self.assertEqual(
                     json_file.read_bytes(),
-                    b'{"name":"room","layers":[],"visible":true,}' + line_ending,
+                    b'{\n  "name":"room",\n  "layers":[],\n  "visible":true,\n}'.replace(b"\n", line_ending)
+                    + line_ending,
                 )
 
-    def test_save_json_loose_preserves_space_indentation_and_no_final_newline(self):
+    def test_save_json_loose_renders_gm_style_and_keeps_no_final_newline(self):
         json_file = self.project_root / "spaces.yy"
         json_file.write_text('{\n    "name": "room",\n}', encoding="utf-8")
         data = {"name": "room", "marker": ",["}
@@ -286,12 +289,12 @@ class TestJSONUtilities(TestUtilsComprehensive):
         save_json_loose(json_file, data)
 
         content = json_file.read_text(encoding="utf-8")
-        self.assertTrue(content.startswith('{\n    "name"'))
+        self.assertTrue(content.startswith('{\n  "name"'))
         self.assertFalse(content.endswith("\n"))
-        self.assertIn('"marker": ",[",', content)
+        self.assertIn('  "marker":",[",\n', content)
         self.assertEqual(json.loads(strip_trailing_commas(content)), data)
 
-    def test_save_json_loose_preserves_crlf_tab_indentation_and_final_newline(self):
+    def test_save_json_loose_renders_gm_style_with_crlf_and_final_newline(self):
         json_file = self.project_root / "tabs_crlf.yy"
         json_file.write_bytes(b'{\r\n\t"name": "room",\r\n\t"layers": [],\r\n}\r\n')
         data = {"name": "room", "marker": ",]", "layers": ["ends with ,}"]}
@@ -299,11 +302,11 @@ class TestJSONUtilities(TestUtilsComprehensive):
         save_json_loose(json_file, data)
 
         content = json_file.read_bytes().decode("utf-8")
-        self.assertTrue(content.startswith('{\r\n\t"name"'))
+        self.assertTrue(content.startswith('{\r\n  "name"'))
         self.assertNotIn("\n", content.replace("\r\n", ""))
         self.assertTrue(content.endswith("\r\n"))
-        self.assertIn('\t"marker": ",]",\r\n', content)
-        self.assertIn('\t\t"ends with ,}",\r\n', content)
+        self.assertIn('  "marker":",]",\r\n', content)
+        self.assertIn('    "ends with ,}",\r\n', content)
         self.assertEqual(json.loads(strip_trailing_commas(content)), data)
 
     def test_add_trailing_commas(self):
