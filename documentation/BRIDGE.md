@@ -217,6 +217,17 @@ If `game_connected` is false, the bridge object likely is not instantiated.
 - `gm_run_command("ping", project_root=...)` -> `pong`
 - `gm_run_command("room_info", project_root=...)` -> `OK:<room> (<w>x<h>)`
 
+### Calling a game method: `inst_call`
+
+`gm_run_command("inst_call <object|global> <dotted.path> [args...]", project_root=...)` calls a method stored in a variable.
+
+- The first word is an object name (its first instance) or `global`.
+- The dotted path walks struct/instance variables; the last segment is the method to call.
+- Arguments are space-separated; numeric ones are converted to numbers.
+- The result is `OK:<value>`, or `ERROR:<message>` (the call is wrapped in try/catch so a throw cannot hang the game).
+- Examples: `inst_call global level.stage.spawn_snack`, `inst_call obj_hud shop.buy 3`.
+- Needs GameMaker 2023+ (`string_split`). Only bridges installed after this command was added have it; installed bridges are not changed.
+
 ### Step 5: Spawn an object and read its logs
 
 1) Compute the room center:

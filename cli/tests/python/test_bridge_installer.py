@@ -483,6 +483,17 @@ class TestBridgeInstallerGMLContent(unittest.TestCase):
         self.assertIn("goto_room", content)
         self.assertIn("spawn", content)
 
+    def test_async_event_contains_guarded_inst_call(self):
+        """Test Other_68.gml ships inst_call, guarded so a throw cannot hang the game."""
+        async_gml = self.project_root / "objects" / BRIDGE_OBJECT_NAME / "Other_68.gml"
+        content = async_gml.read_text()
+
+        self.assertIn('case "inst_call":', content)
+        self.assertLess(content.index('case "inst_call":'), content.index("default:"))
+        self.assertIn("string_split(_parts[2]", content)
+        self.assertIn("method_call(_fn, _args)", content)
+        self.assertIn('return "ERROR:" + string(_ex.message);', content)
+
     def test_script_contains_log_function(self):
         """Test __mcp_log.gml contains logging function."""
         script_gml = self.project_root / "scripts" / BRIDGE_SCRIPT_NAME / f"{BRIDGE_SCRIPT_NAME}.gml"
