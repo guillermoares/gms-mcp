@@ -473,6 +473,19 @@ class TestBridgeInstallerGMLContent(unittest.TestCase):
         self.assertIn("network_connect_raw", content)
         self.assertIn("127.0.0.1", content)
 
+    def test_create_event_reads_port_from_environment(self):
+        """Test Create_0.gml reads GMR_BRIDGE_PORT and falls back to the installer port."""
+        create_gml = self.project_root / "objects" / BRIDGE_OBJECT_NAME / "Create_0.gml"
+        content = create_gml.read_text()
+
+        self.assertIn("global.__mcp_port = 6502;", content)
+        self.assertIn('var _p = environment_get_variable("GMR_BRIDGE_PORT");', content)
+        self.assertIn('if (_p != "") global.__mcp_port = real(_p);', content)
+        self.assertLess(
+            content.index("global.__mcp_port = 6502;"),
+            content.index("GMR_BRIDGE_PORT"),
+        )
+
     def test_async_event_contains_command_handler(self):
         """Test Other_68.gml contains command handling."""
         async_gml = self.project_root / "objects" / BRIDGE_OBJECT_NAME / "Other_68.gml"
