@@ -522,6 +522,8 @@ global.__mcp_socket = -1;
 global.__mcp_enabled = false;
 global.__mcp_buffer = "";
 global.__mcp_port = {port};
+var _p = environment_get_variable("GMR_BRIDGE_PORT");
+if (_p != "") global.__mcp_port = real(_p);
 
 // Try to connect to MCP bridge server
 var _socket = network_create_socket(network_socket_tcp);

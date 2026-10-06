@@ -53,7 +53,7 @@ These are common mistakes agents make when setting up or troubleshooting the bri
 
 **Mistake**: Starting a new game without stopping the previous one.
 
-**Why it fails**: Port 6502 can only be used by one game at a time. If another game is already connected, the new game cannot connect.
+**Why it fails**: Port 6502 can only be used by one game at a time. If another game is already connected, the new game cannot connect. A game started with the environment variable `GMR_BRIDGE_PORT` set connects to that port instead of 6502, so several games can run at once if each has its own port and its own bridge server.
 
 **Symptoms**:
 - `game_connected: false` even though bridge is installed and in room
